@@ -12,17 +12,19 @@
 
 import sqlite3
 import csv
+from timeit import default_timer as timer
 
-conn = sqlite3.connect("jump_map/sqlite-latest.sqlite")
+conn = sqlite3.connect("sqlite-latest.sqlite")
 cur = conn.cursor()
 # Kor-Azor is regionID 10000065
-# We also need to include systems in the neighbouring regions as sometimes it's faster to jump through there:
-# 10000043, 10000067, 10000052, 10000049, 10000054
-# This is very inefficient but since we're just doing it once it's ok
+# First we will do a search within only the Kor-Azor region, but that won't catch all possible shortest paths
+# as there are some shortcuts through neighbours. Once we've found the shortest path within Kor-Azor we do another
+# search in the extended region database, but stop searching down any path once we're above the shortest Kor-Azor path
+# for performance reasons
 cur.execute("SELECT fromSolarSystemID, toSolarSystemID FROM mapSolarSystemJumps "
-            "WHERE toRegionID IN (10000065, 10000043, 10000067, 10000052, 10000049, 10000054)")
+            "WHERE toRegionID IN (10000065)")
 rows = cur.fetchall()
-conn.close()
+
 
 
 solarSystemDict = dict()
@@ -30,6 +32,24 @@ solarSystemDict = dict()
 # For each unique entry fromSolarSystemID (first list element) look up all possible second list elements (toSolarSystemID)
 for r in rows:
     solarSystemDict[str(r[0])] = [str(i[1]) for i in rows if str(i[0]) == str(r[0])]
+
+
+cur = conn.cursor()
+# Neighbouring regions:
+# 10000043, 10000067, 10000052, 10000049, 10000054
+cur.execute("SELECT fromSolarSystemID, toSolarSystemID FROM mapSolarSystemJumps "
+            "WHERE toRegionID IN (10000065, 10000043, 10000067, 10000052, 10000049, 10000054)")
+
+rows = cur.fetchall()
+conn.close()
+
+solarSystemDictExtended = dict()
+
+# For each unique entry fromSolarSystemID (first list element) look up all possible second list elements (toSolarSystemID)
+for r in rows:
+    solarSystemDictExtended[str(r[0])] = [str(i[1]) for i in rows if str(i[0]) == str(r[0])]
+
+
 
 """ A Python Class
 A simple Python graph class, demonstrating the essential 
@@ -118,11 +138,17 @@ class Graph(object):
                     return extended_path
         return None
 
-    def find_all_paths(self, start_vertex, end_vertex, path=[]):
+    def find_all_paths(self, start_vertex, end_vertex, current_min = int(30), path=[]):
         """ find all paths from start_vertex to
             end_vertex in graph """
         graph = self.__graph_dict
         path = path + [start_vertex]
+
+        # As we are only interested in the shortest path, we set some maximum number of jumps above which we
+        # won't bother continue searching, default is 30 jumps as the Kor-Azor region is not that big!
+        if len(path) > current_min:
+            return [path]
+
         if start_vertex == end_vertex:
             return [path]
         if start_vertex not in graph:
@@ -132,21 +158,27 @@ class Graph(object):
             if vertex not in path:
                 extended_paths = self.find_all_paths(vertex,
                                                      end_vertex,
+                                                     current_min,
                                                      path)
                 for p in extended_paths:
                     paths.append(p)
-                    if len(paths) > 20:
-                        return paths
         return paths
 
-
 solarSystemGraph = Graph(solarSystemDict)
+solarSystemGraphExtended = Graph(solarSystemDictExtended)
 
-
-def calc_jumps(from_id, to_id):
+def calc_jumps(from_id, to_id, extended = False, **kwargs):
     # find_path gives a list of the shortest path to jump through, starting with the "current" system
     # so this minus 1 is the number of jumps
-    all_paths = solarSystemGraph.find_all_paths(from_id, to_id)
+    # Can either search only within Kor-Azor, or within all surrounding regions if extended = True
+    # kwargs are intended to pass some previouly found current_min number of jumps when searching in the
+    # extended regions otherwise it will take a very long time.
+    if extended is True:
+        graph = solarSystemGraphExtended
+    else:
+        graph = solarSystemGraph
+
+    all_paths = graph.find_all_paths(from_id, to_id, **kwargs)
     length_all_paths = [len(path) for path in all_paths]
     n_jumps = min(length_all_paths) - 1
     return(n_jumps)
@@ -156,14 +188,29 @@ def calc_jumps(from_id, to_id):
 
 # Test to make sure we get the same number of jumps as from a market window export. We're starting in
 # system Nahol, ID 30005069
+# test_list third element is jump according to market export sheet, fourth is from our path finder
 test_list = []
 
-with open("jump_map/jump_test.csv", 'r') as f:
+with open("jump_test.csv", 'r') as f:
     reader = csv.reader(f)
     for row in reader:
         test_list.append([str(30005069), str(row[0]), int(row[1])])
 
+start = timer()
 for item in test_list:
     item.append(calc_jumps(item[0], item[1]))
+stop = timer()
+print(stop - start)
+print(test_list)
 
 
+# These results however are not always right as they were only searched for within the Kor-Azor region, do
+# another search in all possible paths including surrounding regions, but don't bother following any path which
+# is longer than the shortest already found.
+
+start = timer()
+for item in test_list:
+    item.append(calc_jumps(item[0], item[1], extended=True, current_min = item[3]))
+stop = timer()
+print(stop - start)
+print(test_list)
