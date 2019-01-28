@@ -15,6 +15,7 @@ import csv
 from timeit import default_timer as timer
 import itertools
 import pickle
+from tqdm import tqdm
 
 conn = sqlite3.connect("sqlite-latest.sqlite")
 cur = conn.cursor()
@@ -140,7 +141,7 @@ class Graph(object):
                     return extended_path
         return None
 
-    def find_all_paths(self, start_vertex, end_vertex, current_min = int(30), path=[]):
+    def find_all_paths(self, start_vertex, end_vertex, current_min = None, path=[]):
         """ find all paths from start_vertex to
             end_vertex in graph """
         graph = self.__graph_dict
@@ -148,8 +149,13 @@ class Graph(object):
 
         # As we are only interested in the shortest path, we set some maximum number of jumps above which we
         # won't bother continue searching, default is 30 jumps as the Kor-Azor region is not that big!
+        # If current_min is not specified use 30 jumps, this is not defined in the input arguments as
+        # we might later not find any valid paths in which case we might pass None to this parameter
+        if current_min is None:
+            current_min = int(30)
+
         if len(path) > current_min:
-            return [path]
+            return [None]
 
         if start_vertex == end_vertex:
             return [path]
@@ -181,9 +187,12 @@ def calc_jumps(from_id, to_id, extended = False, **kwargs):
         graph = solarSystemGraph
 
     all_paths = graph.find_all_paths(from_id, to_id, **kwargs)
-    length_all_paths = [len(path) for path in all_paths]
-    n_jumps = min(length_all_paths) - 1
-    return(n_jumps)
+    length_all_paths = [len(path) for path in all_paths if path is not None]
+    if len(length_all_paths) == 0:
+        return(None)
+    else:
+        n_jumps = min(length_all_paths) - 1
+        return(n_jumps)
 
 
 
@@ -214,6 +223,7 @@ def calc_jumps(from_id, to_id, extended = False, **kwargs):
 # Find all possible combinations of solar systems within Kor-Azor region
 uniqueSolarSystems = list(solarSystemDict.keys())
 
+
 solarSystemsCombinations = list()
 for subset in itertools.combinations(uniqueSolarSystems, 2):
     solarSystemsCombinations.append(subset)
@@ -226,7 +236,7 @@ for b in solarSystemsCombinations:
 # Calculate the jump distances between all elements in the combined list, first using
 # only the Kor-Azor map, then looking if going through any neighbouring region is
 # faster
-for item in sSC_list:
+for item in tqdm(sSC_list):
     item.append(calc_jumps(item[0], item[1]))
     item.append(calc_jumps(item[0], item[1], extended=True, current_min = item[2]))
     item.append(min(item[2], item[3]))
