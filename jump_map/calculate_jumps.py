@@ -13,6 +13,8 @@
 import sqlite3
 import csv
 from timeit import default_timer as timer
+import itertools
+import pickle
 
 conn = sqlite3.connect("sqlite-latest.sqlite")
 cur = conn.cursor()
@@ -186,31 +188,66 @@ def calc_jumps(from_id, to_id, extended = False, **kwargs):
 
 
 
-# Test to make sure we get the same number of jumps as from a market window export. We're starting in
-# system Nahol, ID 30005069
-# test_list third element is jump according to market export sheet, fourth is from our path finder
-test_list = []
+# # Test to make sure we get the same number of jumps as from a market window export. We're starting in
+# # system Nahol, ID 30005069
+# # test_list third element is jump according to market export sheet, fourth is from our path finder
+# test_list = []
+#
+# with open("jump_test.csv", 'r') as f:
+#     reader = csv.reader(f)
+#     for row in reader:
+#         test_list.append([str(30005069), str(row[0]), int(row[1])])
+#
+# for item in test_list:
+#     item.append(calc_jumps(item[0], item[1]))
+# print(test_list)
+#
+#
+# # These results however are not always right as they were only searched for within the Kor-Azor region, do
+# # another search in all possible paths including surrounding regions, but don't bother following any path which
+# # is longer than the shortest already found.
+#
+# for item in test_list:
+#     item.append(calc_jumps(item[0], item[1], extended=True, current_min = item[3]))
+# print(test_list)
 
-with open("jump_test.csv", 'r') as f:
-    reader = csv.reader(f)
-    for row in reader:
-        test_list.append([str(30005069), str(row[0]), int(row[1])])
+# Find all possible combinations of solar systems within Kor-Azor region
+uniqueSolarSystems = list(solarSystemDict.keys())
 
-start = timer()
-for item in test_list:
+solarSystemsCombinations = list()
+for subset in itertools.combinations(uniqueSolarSystems, 2):
+    solarSystemsCombinations.append(subset)
+
+sSC_list = list()
+for b in solarSystemsCombinations:
+    sSC_list.append(list(b))
+
+
+# Calculate the jump distances between all elements in the combined list, first using
+# only the Kor-Azor map, then looking if going through any neighbouring region is
+# faster
+for item in sSC_list:
     item.append(calc_jumps(item[0], item[1]))
-stop = timer()
-print(stop - start)
-print(test_list)
+    item.append(calc_jumps(item[0], item[1], extended=True, current_min = item[2]))
+    item.append(min(item[2], item[3]))
 
+output = list()
+for item in sSC_list:
+    output.append([item[0], item[1], item[4]])
 
-# These results however are not always right as they were only searched for within the Kor-Azor region, do
-# another search in all possible paths including surrounding regions, but don't bother following any path which
-# is longer than the shortest already found.
+# Save as class to define findJumps method
+class jumpMap:
 
-start = timer()
-for item in test_list:
-    item.append(calc_jumps(item[0], item[1], extended=True, current_min = item[3]))
-stop = timer()
-print(stop - start)
-print(test_list)
+    # jump_list should be a list of lists where the first two elements are
+    # solar system ids, and the third the number of jumps between them
+    def __init__(self, jump_list):
+        self.jump_list = jump_list
+
+    def findJumps(self, from_id, to_id):
+        nJumps = [a[2] for a in self.jump_list if
+                  ((a[0] == from_id) and (a[1] == to_id)) or
+                  ((a[1] == to_id) and (a[0] == from_id))]
+        return(int(nJumps))
+
+jumpMap_KorAzor = jumpMap(output)
+pickle.dump(jumpMap_KorAzor, open("jumpMap_KorAzor.pickle", "wb" ), pickle.HIGHEST_PROTOCOL)

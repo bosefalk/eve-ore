@@ -1,5 +1,6 @@
 import csv
 from collections import Counter
+import pickle
 
 # bid == TRUE means it's a buy order
 
@@ -11,17 +12,23 @@ from collections import Counter
 
 class marketLog:
 
-    def __init__(self, orderID, price, volRemaining, minVolume, jumps, range, bid):
+    def __init__(self, orderID, price, volRemaining, minVolume, system_id, range, isBuyOrder):
         self.orderID = orderID
         self.price = price
         self.volRemaining = volRemaining
         self.minVolume = minVolume
-        self.jumps = jumps
         if range == -1:
             self.range = 0
         else:
             self.range = range
-        self.isBuyorder = bid
+        self.system_id = system_id
+        self.isBuyorder = isBuyOrder
+
+    def addJumps(self, jumps):
+        self.jumps = jumps
+
+    def calcJumps(self, current_system_id, jumpMap):
+        self.jumps = jumpMap.findJumps(current_system_id, self.system_id)
 
     def canSell_volume(self, volume):
 
@@ -64,10 +71,10 @@ def find_top5(filename = 'market/Kor-Azor-marketgen-2019.01.22 105804.txt',
                                      price=float(row[0]),
                                      volRemaining=int(float(row[1])), # . and , as decimals not behaving nicely
                                      minVolume=int(row[6]),
-                                     jumps=int(row[13]),
                                      range=int(row[3]),
-                                      bid=row[7]
+                                      isBuyOrder=row[7]
                                       ))
+            # Need to update with jumps and system Id
 
     # Apply the canSell_volume function to each element and keep those which we can sell to
     for obj in market_list:
@@ -92,3 +99,32 @@ def find_top5(filename = 'market/Kor-Azor-marketgen-2019.01.22 105804.txt',
 
 
 # Solar system table: https://developers.eveonline.com/resource/resources
+
+
+vol_to_sell = 200000
+time_cost = 6
+jump_time = 45
+current_system_id = '30005069'
+
+
+price_trit = urllib.request.urlopen("https://esi.evetech.net/latest/markets/10000065/orders/?datasource=tranquility&order_type=buy&page=1&type_id=35").read()
+price_trit = json.loads(price_trit)
+market_list = list()
+for item in price_trit:
+    market_list.append(marketLog(orderID=item['order_id'],
+                                 price=item['price'],
+                                 volRemaining=item['volume_remain'],  # . and , as decimals not behaving nicely
+                                 minVolume=item['min_volume'],
+                                 system_id=item['system_id'],
+                                 range=item['range'],
+                                 isBuyOrder=item['is_buy_order']
+                                 ))
+
+for obj in market_list:
+    obj.canSell_volume(volume = vol_to_sell)
+market_list = [obj for obj in market_list if obj.canSell is True]
+
+kor_azor_jump_map = pickle.load( open( "jump_map/jumpMap_KorAzor.pickle", "rb" ) )
+
+for obj in market_list:
+    obj.calcJumps('30005069', kor_azor_jump_map)
