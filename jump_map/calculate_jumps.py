@@ -24,17 +24,13 @@ cur = conn.cursor()
 # as there are some shortcuts through neighbours. Once we've found the shortest path within Kor-Azor we do another
 # search in the extended region database, but stop searching down any path once we're above the shortest Kor-Azor path
 # for performance reasons
-cur.execute("SELECT fromSolarSystemID, toSolarSystemID FROM mapSolarSystemJumps "
-            "WHERE toRegionID IN (10000065)")
+cur.execute("SELECT fromSolarSystemID, toSolarSystemID FROM mapSolarSystemJumps WHERE toRegionID IN (10000065)")
 rows = cur.fetchall()
 
-
-
 solarSystemDict = dict()
-
 # For each unique entry fromSolarSystemID (first list element) look up all possible second list elements (toSolarSystemID)
 for r in rows:
-    solarSystemDict[str(r[0])] = [str(i[1]) for i in rows if str(i[0]) == str(r[0])]
+    solarSystemDict[str(r[0])] = set([str(i[1]) for i in rows if str(i[0]) == str(r[0])])
 
 
 cur = conn.cursor()
@@ -50,200 +46,54 @@ solarSystemDictExtended = dict()
 
 # For each unique entry fromSolarSystemID (first list element) look up all possible second list elements (toSolarSystemID)
 for r in rows:
-    solarSystemDictExtended[str(r[0])] = [str(i[1]) for i in rows if str(i[0]) == str(r[0])]
+    solarSystemDictExtended[str(r[0])] = set([str(i[1]) for i in rows if str(i[0]) == str(r[0])])
 
 
+# Breadth-first search for shortest path
+# From https://eddmann.com/posts/depth-first-search-and-breadth-first-search-in-python/
 
-""" A Python Class
-A simple Python graph class, demonstrating the essential 
-facts and functionalities of graphs.
-"""
+# Search through each depth layer of the graph before moving onto the next layer (i.e. check if goal is
+# within 1 jump of the start, if not move on to see if within 2 jumps and so on)
+
+def bfs_paths(graph, start, goal):
+    queue = [(start, [start])]
+    while queue:
+        (vertex, path) = queue.pop(0)
+        for next in graph[vertex] - set(path):
+            if next == goal:
+                yield path + [next]
+            else:
+                queue.append((next, path + [next]))
 
 
-class Graph(object):
-
-    def __init__(self, graph_dict=None):
-        """ initializes a graph object
-            If no dictionary or None is given,
-            an empty dictionary will be used
-        """
-        if graph_dict == None:
-            graph_dict = {}
-        self.__graph_dict = graph_dict
-
-    def vertices(self):
-        """ returns the vertices of a graph """
-        return list(self.__graph_dict.keys())
-
-    def edges(self):
-        """ returns the edges of a graph """
-        return self.__generate_edges()
-
-    def add_vertex(self, vertex):
-        """ If the vertex "vertex" is not in
-            self.__graph_dict, a key "vertex" with an empty
-            list as a value is added to the dictionary.
-            Otherwise nothing has to be done.
-        """
-        if vertex not in self.__graph_dict:
-            self.__graph_dict[vertex] = []
-
-    def add_edge(self, edge):
-        """ assumes that edge is of type set, tuple or list;
-            between two vertices can be multiple edges!
-        """
-        edge = set(edge)
-        (vertex1, vertex2) = tuple(edge)
-        if vertex1 in self.__graph_dict:
-            self.__graph_dict[vertex1].append(vertex2)
-        else:
-            self.__graph_dict[vertex1] = [vertex2]
-
-    def __generate_edges(self):
-        """ A static method generating the edges of the
-            graph "graph". Edges are represented as sets
-            with one (a loop back to the vertex) or two
-            vertices
-        """
-        edges = []
-        for vertex in self.__graph_dict:
-            for neighbour in self.__graph_dict[vertex]:
-                if {neighbour, vertex} not in edges:
-                    edges.append({vertex, neighbour})
-        return edges
-
-    def __str__(self):
-        res = "vertices: "
-        for k in self.__graph_dict:
-            res += str(k) + " "
-        res += "\nedges: "
-        for edge in self.__generate_edges():
-            res += str(edge) + " "
-        return res
-
-    def find_path(self, start_vertex, end_vertex, path=None):
-        """ find a path from start_vertex to end_vertex
-            in graph """
-        if path == None:
-            path = []
-        graph = self.__graph_dict
-        path = path + [start_vertex]
-        if start_vertex == end_vertex:
-            return path
-        if start_vertex not in graph:
-            return None
-        for vertex in graph[start_vertex]:
-            if vertex not in path:
-                extended_path = self.find_path(vertex,
-                                               end_vertex,
-                                               path)
-                if extended_path:
-                    return extended_path
+def shortest_path(graph, start, goal):
+    try:
+        return next(bfs_paths(graph, start, goal))
+    except StopIteration:
         return None
 
-    def find_all_paths(self, start_vertex, end_vertex, current_min = None, path=[]):
-        """ find all paths from start_vertex to
-            end_vertex in graph """
-        graph = self.__graph_dict
-        path = path + [start_vertex]
 
-        # As we are only interested in the shortest path, we set some maximum number of jumps above which we
-        # won't bother continue searching, default is 30 jumps as the Kor-Azor region is not that big!
-        # If current_min is not specified use 30 jumps, this is not defined in the input arguments as
-        # we might later not find any valid paths in which case we might pass None to this parameter
-        if current_min is None:
-            current_min = int(30)
+def calc_jumps(from_id, to_id):
 
-        if len(path) > current_min:
-            return [None]
+    s_path = shortest_path(solarSystemDictExtended, from_id, to_id)
+    return(len(s_path) - 1)
 
-        if start_vertex == end_vertex:
-            return [path]
-        if start_vertex not in graph:
-            return []
-        paths = []
-        for vertex in graph[start_vertex]:
-            if vertex not in path:
-                extended_paths = self.find_all_paths(vertex,
-                                                     end_vertex,
-                                                     current_min,
-                                                     path)
-                for p in extended_paths:
-                    paths.append(p)
-        return paths
-
-solarSystemGraph = Graph(solarSystemDict)
-solarSystemGraphExtended = Graph(solarSystemDictExtended)
-
-def calc_jumps(from_id, to_id, extended = False, **kwargs):
-    # find_path gives a list of the shortest path to jump through, starting with the "current" system
-    # so this minus 1 is the number of jumps
-    # Can either search only within Kor-Azor, or within all surrounding regions if extended = True
-    # kwargs are intended to pass some previouly found current_min number of jumps when searching in the
-    # extended regions otherwise it will take a very long time.
-    if extended is True:
-        graph = solarSystemGraphExtended
-    else:
-        graph = solarSystemGraph
-
-    all_paths = graph.find_all_paths(from_id, to_id, **kwargs)
-    length_all_paths = [len(path) for path in all_paths if path is not None]
-    if len(length_all_paths) == 0:
-        return(None)
-    else:
-        n_jumps = min(length_all_paths) - 1
-        return(n_jumps)
-
-
-
-
-# # Test to make sure we get the same number of jumps as from a market window export. We're starting in
-# # system Nahol, ID 30005069
-# # test_list third element is jump according to market export sheet, fourth is from our path finder
-# test_list = []
-#
-# with open("jump_test.csv", 'r') as f:
-#     reader = csv.reader(f)
-#     for row in reader:
-#         test_list.append([str(30005069), str(row[0]), int(row[1])])
-#
-# for item in test_list:
-#     item.append(calc_jumps(item[0], item[1]))
-# print(test_list)
-#
-#
-# # These results however are not always right as they were only searched for within the Kor-Azor region, do
-# # another search in all possible paths including surrounding regions, but don't bother following any path which
-# # is longer than the shortest already found.
-#
-# for item in test_list:
-#     item.append(calc_jumps(item[0], item[1], extended=True, current_min = item[3]))
-# print(test_list)
-
-# Find all possible combinations of solar systems within Kor-Azor region
+# Find all possible combinations of solar systems within Kor-Azor region + neighboring systems
 uniqueSolarSystems = list(solarSystemDict.keys())
-
-
-solarSystemsCombinations = list()
-for subset in itertools.combinations(uniqueSolarSystems, 2):
-    solarSystemsCombinations.append(subset)
-
-sSC_list = list()
-for b in solarSystemsCombinations:
-    sSC_list.append(list(b))
-
-
-# Calculate the jump distances between all elements in the combined list, first using
-# only the Kor-Azor map, then looking if going through any neighbouring region is
-# faster
-for item in tqdm(sSC_list):
-    item.append(calc_jumps(item[0], item[1]))
-    item.append(calc_jumps(item[0], item[1], extended=True, current_min = item[2]))
-    item.append(min(item[2], item[3]))
-
-output = list()
-for item in sSC_list:
-    output.append([item[0], item[1], item[4]])
+#
+#
+# solarSystemsCombinations = list()
+# for subset in itertools.combinations(uniqueSolarSystems, 2):
+#     solarSystemsCombinations.append(subset)
+#
+# sSC_list = list()
+# for b in solarSystemsCombinations:
+#     sSC_list.append(list(b))
+#
+#
+# # Calculate the jump distances between all elements in the combined list
+# for item in tqdm(sSC_list):
+#     item.append(calc_jumps(item[0], item[1]))
 
 # Save as class to define findJumps method
 class jumpMap:
@@ -259,5 +109,14 @@ class jumpMap:
                   ((a[1] == to_id) and (a[0] == from_id))]
         return(int(nJumps))
 
-jumpMap_KorAzor = jumpMap(output)
-pickle.dump(jumpMap_KorAzor, open("jumpMap_KorAzor.pickle", "wb" ), pickle.HIGHEST_PROTOCOL)
+
+# We want to find the number of jumps from Nahol, ID 30005069
+nahol_jumps = list()
+for item in uniqueSolarSystems:
+    nahol_jumps.append(['30005069', item])
+
+for item in tqdm(nahol_jumps):
+    item.append(calc_jumps(item[0], item[1]))
+
+jumpMap_Nahol = jumpMap(nahol_jumps)
+pickle.dump(jumpMap_Nahol, open("jumpMap_Nahol.pickle", "wb" ), pickle.HIGHEST_PROTOCOL)
