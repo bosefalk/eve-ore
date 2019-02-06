@@ -92,7 +92,7 @@ uniqueSolarSystems = list(solarSystemDict.keys())
 #
 #
 # # Calculate the jump distances between all elements in the combined list
-# for item in tqdm(sSC_list):
+# for item in tqdm(sSC_list):d
 #     item.append(calc_jumps(item[0], item[1]))
 
 # Save as class to define findJumps method
