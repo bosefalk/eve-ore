@@ -1,5 +1,5 @@
 import sqlite3
-from jump_map.prices import amarr_price_avg
+from jump_map.prices import amarr_price_avg, base_price
 import math
 
 conn = sqlite3.connect("jump_map/sqlite-latest.sqlite")
@@ -24,9 +24,11 @@ BPCs = dict(BPCs)
 
 class BPOcost:
 
-    def __init__(self, typeID, mat_research = 0.93):
+    def __init__(self, typeID, mat_research = 0.93, batch_size = 10, prod_cost_perc = 0.05):
         self.typeID = typeID
         self.mat_research = mat_research
+        self.batch_size = batch_size
+        self.prod_cost_perc = prod_cost_perc
 
     def add_originBPO(self):
         conn = sqlite3.connect("jump_map/sqlite-latest.sqlite")
@@ -58,23 +60,17 @@ class BPOcost:
 
         del self.t2mats[self.t1ProductID]
 
+        for key in self.t2mats:
+            self.t2mats[key] *= self.batch_size
+
     def add_t1mats(self):
         conn = sqlite3.connect("jump_map/sqlite-latest.sqlite")
         cur = conn.cursor()
         cur.execute("SELECT materialTypeID, quantity FROM industryActivityMaterials WHERE activityID = 1 AND typeID = " + str(self.originTypeID))
         self.t1mats = dict(cur.fetchall())
 
-    def cost_t1mats(self, mat_research = 0.93):
-
-        # Look up yesterdays average prices in Amarr for the t1 product, adjusted for the assumed materials
-        # research modifier on the t1 BPO (default 7%)
-        t1cost = list()
-
-        for key, value in self.t1mats.items():
-            amarr_price = amarr_price_avg(key) * (value * 0.93)
-            t1cost.append(amarr_price)
-
-        self.t1cost = round(sum(t1cost))
+        for key in self.t1mats:
+            self.t1mats[key] *= self.batch_size
 
     def cost_t1mats(self):
 
@@ -107,7 +103,14 @@ class BPOcost:
     def add_price(self):
 
         amarr_sale_price = amarr_price_avg(self.outputItem)
-        self.price = round(amarr_sale_price)
+        self.price = round(amarr_sale_price * self.batch_size)
+
+    def calc_prod_cost(self):
+
+        b_price = base_price(self.outputItem)
+
+        self.prod_cost = round((b_price * self.batch_size) * self.prod_cost_perc)
+
 
 a = BPOcost(typeID=784)
 a.add_name()
@@ -119,7 +122,10 @@ a.cost_t2mats()
 a.total_cost()
 a.add_outputItem()
 a.add_price()
+a.calc_prod_cost()
 
 print(a.cost)
 print(a.price)
 print(a.price - a.cost)
+print(a.prod_cost)
+print(a.price - a.cost - a.prod_cost)

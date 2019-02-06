@@ -3,6 +3,7 @@
 import urllib.request
 import json
 import datetime
+from statistics import mean
 
 ID = 35
 
@@ -24,18 +25,43 @@ def amarr_price_avg(ID):
     price_json = urllib.request.urlopen("https://esi.evetech.net/latest/markets/10000043/history/?datasource=tranquility&type_id=" + str(ID)).read()
     price_dict = json.loads(price_json)
 
-    yesterday = datetime.datetime.today() - datetime.timedelta(days = 1)
-    yesterday_str = yesterday.strftime("%Y-%m-%d")
+    # Calculate average over the last 20 days
+    today = datetime.datetime.today()
+    last_20_days = list()
 
-    yesterday_avg = [dict['average'] for dict in price_dict if dict['date'] == yesterday_str]
+    for i in range(1,21):
+        target_date = today - datetime.timedelta(days = i)
+        date_str = target_date.strftime("%Y-%m-%d")
+        last_20_days.append(date_str)
 
-    while len(yesterday_avg) == 0:
-        yesterday = yesterday - datetime.timedelta(days = 1)
-        yesterday_str = yesterday.strftime("%Y-%m-%d")
-        yesterday_avg = [dict['average'] for dict in price_dict if dict['date'] == yesterday_str]
+    avg_prices = list()
+    for date in last_20_days:
+        price_point = [dict['average'] for dict in price_dict if dict['date'] == date]
+        if len(price_point) == 0:
+            continue
+        avg_prices.append(price_point[0])
 
-    return(yesterday_avg[0])
+    price = mean(avg_prices)
+    return(price)
 
+def base_price(typeID):
+
+
+    all_json = urllib.request.urlopen("https://esi.evetech.net/latest/markets/prices/?datasource=tranquility").read()
+    all_dict = json.loads(all_json)
+
+    base_price = [d['adjusted_price'] for d in all_dict if d['type_id'] == typeID][0]
+
+    # # mats_dict is a dictionary, key = material typeID, value = quantity required
+    # # Replace the quantity with the quantity multiplied by the adjusted base price
+    # for key, value in mats_dict.items():
+    #     adj_price = [dict['adjusted_price'] for dict in all_dict if dict['type_id'] == key][0]
+    #     mats_dict[key] *= adj_price
+
+    # return rum of all values
+    # return(round(sum(mats_dict.values())))
+
+    return (base_price)
 #
 #
 #
