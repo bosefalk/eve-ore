@@ -19,7 +19,7 @@ def amarr_price_now(ID):
     min_price = min(prices)
     return(min_price)
 
-def amarr_price_avg(ID):
+def amarr_price_avg(ID, return_volume = False):
 
     # Domain is region ID 10000043
     price_json = urllib.request.urlopen("https://esi.evetech.net/latest/markets/10000043/history/?datasource=tranquility&type_id=" + str(ID)).read()
@@ -41,8 +41,28 @@ def amarr_price_avg(ID):
             continue
         avg_prices.append(price_point[0])
 
-    price = mean(avg_prices)
-    return(price)
+    avg_volume = list()
+    for date in last_20_days:
+        volume_traded = [dict['volume'] for dict in price_dict if dict['date'] == date]
+        if len(volume_traded) == 0:
+            continue
+        avg_volume.append(volume_traded[0])
+
+    if len(avg_volume) == 0:
+        volume = None
+        price = None
+    else:
+        volume = sum(avg_volume)
+        price = mean(avg_prices)
+
+
+
+    if return_volume is False:
+        return(price)
+
+    if return_volume is True:
+        return(price, volume)
+
 
 def base_price(typeID):
 

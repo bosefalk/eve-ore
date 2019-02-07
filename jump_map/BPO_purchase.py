@@ -1,6 +1,8 @@
 import sqlite3
 from jump_map.prices import amarr_price_avg, base_price
 import math
+import csv
+from tqdm import tqdm
 
 conn = sqlite3.connect("jump_map/sqlite-latest.sqlite")
 cur = conn.cursor()
@@ -21,14 +23,16 @@ BPOs = tuple(BPOs)
 cur.execute("SELECT typeID, productTypeID FROM industryActivityProducts WHERE activityID == 8 AND typeID IN {}".format(BPOs))
 BPCs = cur.fetchall()
 BPCs = dict(BPCs)
+BPCs = list(BPCs.values())
 
 class BPOcost:
 
-    def __init__(self, typeID, mat_research = 0.93, batch_size = 10, prod_cost_perc = 0.05):
+    def __init__(self, typeID, mat_research = 0.93, batch_size = 10, system_index = 0.01, tax_rate = 0.05):
         self.typeID = typeID
         self.mat_research = mat_research
         self.batch_size = batch_size
-        self.prod_cost_perc = prod_cost_perc
+        self.system_index = system_index
+        self.tax_rate = tax_rate
 
     def add_originBPO(self):
         conn = sqlite3.connect("jump_map/sqlite-latest.sqlite")
@@ -102,30 +106,53 @@ class BPOcost:
 
     def add_price(self):
 
-        amarr_sale_price = amarr_price_avg(self.outputItem)
-        self.price = round(amarr_sale_price * self.batch_size)
+        amarr_sale_price, self.total_volume = amarr_price_avg(self.outputItem, return_volume=True)
+        if amarr_sale_price is None:
+            self.price = None
+        else:
+            self.price = round(amarr_sale_price * self.batch_size)
 
     def calc_prod_cost(self):
 
         b_price = base_price(self.outputItem)
 
-        self.prod_cost = round((b_price * self.batch_size) * self.prod_cost_perc)
+        self.prod_cost = round(((b_price * self.batch_size) * self.system_index) * (1 + self.tax_rate))
 
 
-a = BPOcost(typeID=784)
-a.add_name()
-a.add_originBPO()
-a.add_t2mats()
-a.add_t1mats()
-a.cost_t1mats()
-a.cost_t2mats()
-a.total_cost()
-a.add_outputItem()
-a.add_price()
-a.calc_prod_cost()
+BPC_obj = dict()
+for bpc in BPCs:
+    BPC_obj[bpc] = BPOcost(typeID=bpc)
 
-print(a.cost)
-print(a.price)
-print(a.price - a.cost)
-print(a.prod_cost)
-print(a.price - a.cost - a.prod_cost)
+for key, value in tqdm(BPC_obj.items()):
+    value.add_name()
+    value.add_originBPO()
+    value.add_t2mats()
+    value.add_t1mats()
+    value.cost_t1mats()
+    value.cost_t2mats()
+    value.total_cost()
+    value.add_outputItem()
+    value.add_price()
+    value.calc_prod_cost()
+
+for key, value in list(BPC_obj.items()):
+
+    if value.price is None:
+        del BPC_obj[key]
+
+
+header = ['typeID', 'name', 'material cost', 'production cost', 'total cost', 'sale price', 'profit', 'volume']
+
+with open('Excel/bpos.csv', 'w') as csvFile:
+    writer = csv.writer(csvFile)
+    writer.writerow(header)
+    for key, value in BPC_obj.items():
+        row = [value.typeID,
+               value.name,
+               value.cost,
+               value.prod_cost,
+               value.cost + value.prod_cost,
+               value.price,
+               value.price - value.cost - value.prod_cost,
+               value.total_volume]
+        writer.writerow(row)
