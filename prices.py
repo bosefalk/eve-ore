@@ -5,19 +5,28 @@ import json
 import datetime
 from statistics import mean
 
-ID = 35
+def amarr_price_now(ID, type = "buy"):
+    # type can be "buy" or "sell", means I want to buy or sell the good (so "buy" looks at best order currently for sale)
 
-def amarr_price_now(ID):
     # Domain is region ID 10000043
-    price_json = urllib.request.urlopen("https://esi.evetech.net/latest/markets/10000043/orders/?datasource=tranquility&order_type=sell&page=1&type_id=" + str(ID)).read()
+    price_json = urllib.request.urlopen("https://esi.evetech.net/latest/markets/10000043/orders/?datasource=tranquility&page=1&type_id=" + str(ID)).read()
     price_dict = json.loads(price_json)
 
-    # Amarr has solarsystem ID 30002187
 
+    if type == "buy":
+        price_dict = [dict for dict in price_dict if dict['is_buy_order'] == False]
+    if type == "sell":
+        price_dict = [dict for dict in price_dict if dict['is_buy_order'] == True]
+
+
+    # Amarr has solarsystem ID 30002187
     price_dict = [dict for dict in price_dict if dict['system_id'] == 30002187]
     prices = [dict['price'] for dict in price_dict]
-    min_price = min(prices)
-    return(min_price)
+
+    if type == "buy":
+        return(min(prices))
+    if type == "sell":
+        return(max(prices))
 
 def amarr_price_avg(ID, return_volume = False):
 
@@ -72,16 +81,29 @@ def base_price(typeID):
 
     base_price = [d['adjusted_price'] for d in all_dict if d['type_id'] == typeID][0]
 
-    # # mats_dict is a dictionary, key = material typeID, value = quantity required
-    # # Replace the quantity with the quantity multiplied by the adjusted base price
-    # for key, value in mats_dict.items():
-    #     adj_price = [dict['adjusted_price'] for dict in all_dict if dict['type_id'] == key][0]
-    #     mats_dict[key] *= adj_price
-
-    # return rum of all values
-    # return(round(sum(mats_dict.values())))
-
     return (base_price)
+
+def mineralID(mineral):
+
+    mineral_dict = {'TRI': 34,
+                   'PYE': 35,
+                   'MEX': 36,
+                   'ISO': 37,
+                   'NOC': 38,
+                   'ZYD': 39,
+                   'MEG': 40,
+                   'MOR': 11399}
+
+    try:
+        mineral_id = mineral_dict[mineral]
+        return(mineral_id)
+    except KeyError:
+        print("'mineral' must be one of " + str(list(mineral_dict.keys())))
+
+
+
+
+
 #
 #
 #

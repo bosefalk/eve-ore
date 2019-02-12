@@ -1,5 +1,5 @@
 import sqlite3
-from jump_map.prices import amarr_price_avg, base_price
+from prices import amarr_price_avg, base_price
 import math
 import csv
 from tqdm import tqdm
